@@ -33,6 +33,7 @@ class ReactiveEffect {
       // 激活状态 依赖收集了 核心就是将当前的effect和稍后渲染的属性关联在一起
       activeEffect = this;
       // 执行传入的fn的时候，如果出现了响应式数据的获取操作，就可以获取到这个全局的activeEffect
+      cleanupEffect(this)
       return this.fn();
     } finally {
       // 执行完当前的effect 归还上次 activeEffect 变量指向的值
@@ -90,12 +91,39 @@ export const trigger = (
 
   // 拿到属性对应的set effects
   const effects = depsMap.get(key);
-  // 防止死循环 刚删除的引用马上又添加进来
   if (effects) {
-    effects.forEach((effect) => {
+    /**
+     * [...effects] 防止死循环 刚删除的引用马上又添加进来
+     * 
+     * 这样会死循环
+     * set.forEach(()=> {
+     *  set.delete(1)
+     *  set.add(1)
+     * })
+     * 
+     */
+    [...effects].forEach((effect) => {
       // 在执行 run 的时候 如果访问到属性，就会继续执行 effect（死循环）
       if (effect === activeEffect) return;
       effect.run();
     });
   }
+};
+
+/**
+ * 清除effect收集的dep set里 每个属性对当前effect的收集
+ * @param effect
+ */
+const cleanupEffect = (effect: ReactiveEffect) => {
+  const { deps } = effect;
+
+  // 不能这样使用，因为是双向记住的
+  // deps = []
+
+  for (let i = 0; i < deps.length; i++) {
+    // 解除key -> effect的关联 执行effect的时候重新收集
+    deps[i].delete(effect);
+  }
+  // 清空当前effect依赖的dep
+  effect.deps.length = 0;
 };
